@@ -1,36 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>留言墙</title>
-    <style>
-        /* ...... */ 
-    <style>
+	<title>留言板</title>
+	<link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
- 
-    <h1>留言墙</h1>
-    <p>输入内容后，点击提交即可</p>
- 
-    <div>
-        <span>谁：</span>
-        <input type="text">
-    </div>
-    <div>
-        <span>对谁：</span>
-        <input type="text">
-    </div>
-    <div>
-        <span>说：</span>
-        <input type="text">
-    </div>
-    <div>
-        <button>提交</button>
-    </div>
-    <div>
-        <button>撤销</button>
-    </div>
- 
- 
+	<header>
+		<h1>留言板</h1>
+	</header>
+	<main>
+		<form>
+			<h2>发布留言</h2>
+			<label for="name">姓名：</label>
+			<input type="text" name="name" id="name" required>
+			<label for="email">电子邮件：</label>
+			<input type="email" name="email" id="email" required>
+			<label for="message">留言内容：</label>
+			<textarea name="message" id="message" required></textarea>
+			<input type="submit" value="提交">
+		</form>
+		<section>
+			<h2>留言列表</h2>
+			<ul id="message-list">
+				<!-- 留言内容通过JavaScript动态添加 -->
+			</ul>
+		</section>
+	</main>
+	<footer>
+		<p>&copy; 2021 留言板</p>
+	</footer>
+	<script src="script.js"></script>
 </body>
 </html>
