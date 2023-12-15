@@ -471,7 +471,7 @@
         }
         //弹幕移动函数
         function move(k, obj, maxLeft) {
-            var speed = b; //控制速度的变量
+            var speed = k; //控制速度的变量
             maxLeft -= speed; //往左移动
             if (maxLeft > -obj.offsetWidth) {
                 obj.style.left = maxLeft + "px";
