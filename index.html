@@ -1,654 +1,208 @@
-/**
-  * 根据关联id获取评论信息
-  * @param relationId 关联id
-  * @param type 类型
-  * @return: com.harvey.result.ResultSupport<java.lang.Object>
-  * @date: 2020/12/10 14:37
-  */
- @GetMapping("findList")
- public ResultSupport<Object> findList(@RequestParam("relationId") String relationId, @RequestParam("type") String type){
-     log.debug("接口[findList]的参数：relationId={}, type={}", relationId, type);
-     ResultSupport<Object> result = ResultSupport.createMisResp();
-     try {
-         List<Comment> commentList = commentService.findList(relationId, type);
-         ResultSupportUtils.fillResultSupport(result, commentList);
-     } catch (Exception e) {
-         log.error("[findList]接口执行异常", e);
-         ResultSupportUtils.fillError(result,"系统出现异常！");
-     }
-     log.debug("接口[findList]的结果：result={}", result);
-     return result;
- }
-
- /**
-  * 保存评论
-  * @param comment 参数
-  * @return: com.tortoise.common.result.ResultSupport<java.lang.Object>
-  * @date: 2020/12/10 14:37
-  */
- @PostMapping("save")
- public ResultSupport<Object> save(@RequestBody Comment comment, HttpServletRequest request){
-     log.debug("接口[save]的参数：comment={}", comment);
-     ResultSupport<Object> result = ResultSupport.createMisResp();
-     String token = request.getHeader("authorization");
-     if (StrUtil.isEmpty(token)) {
-         result.setSuccess(false);
-         result.setMessage("token无效！");
-         return result;
-     }
-     if (BeanUtil.isEmpty(comment)){
-         result.setSuccess(false);
-         result.setMessage("参数无效！");
-         return result;
-     }
-     try {
-         commentService.save(comment, token);
-     } catch (Exception e) {
-         log.error("[save]接口执行异常", e);
-         ResultSupportUtils.fillError(result,"系统出现异常！");
-     }
-     log.debug("接口[save]的结果：result={}", result);
-     return result;
- }
-
-/**
-  * 根据关联id获取绩效信息
-  */
- public List<Comment> findList(String relationId, String type) {
-     return commentMapper.findList(relationId, type);
- }
-
- /**
-  * 保存评论
-  * @param comment 参数
-  * @param token 用户token
-  * @return:
-  * @date: 2020/12/10 14:37
-  */
- @Transactional(rollbackFor = Exception.class)
- public void save(Comment comment, String token) {
-     SysUser user = UserUtils.getUser(token);
-     comment.preInsert(user.getId());
-     comment.setDelFlag("0");
-     commentMapper.save(comment);
- }
-/**
- * 根据关联id获取绩效信息
- */
-List<Comment> findList(@Param("relationId") String relationId, @Param("type") String type);
-
-/**
- * 根据id获取子评论内容
- */
-List<Comment> selectByParentId(@Param("parentId") String parentId);
-
-/**
- * 保存评论
- */
-void save(Comment comment);
-<sql id="commentColumns">
-		a.id AS "id",
-		a.user_id AS "userId",
-		u.name AS "userName",
-		a.relation_id AS "relationId",
-		a.type AS "type",
-		a.reply_user_id AS "replyUserId",
-		r.name AS "replyUserName",
-		a.parent_id AS "parentId",
-		a.content AS "content",
-		u.photo AS "photo",
-		a.del_flag AS "delFlag",
-		a.create_by AS "createBy",
-		a.create_date AS "createDate"
-	</sql>
-
-	<sql id="commentJoins">
-		LEFT JOIN sys_user u ON a.user_id = u.id AND u.del_flag = '0'
-		LEFT JOIN sys_user r ON a.reply_user_id = r.id AND r.del_flag = '0'
-    </sql>
-	<!-- 保存评论 -->
-	<insert id="save">
-		INSERT INTO comment(
-			id,
-			user_id,
-			relation_id,
-			type,
-			reply_user_id,
-			parent_id,
-			content,
-			del_flag,
-			create_by,
-			create_date
-		) VALUES (
-			#{id},
-			#{userId},
-			#{relationId},
-			#{type},
-			#{replyUserId},
-			#{parentId},
-			#{content},
-			#{delFlag},
-			#{createBy},
-			#{createDate}
-		)
-	</insert>
-
-	<resultMap id="commentResultMap" type="com.harvey.entity.Comment">
-		<id column="id" property="id" />
-		<result column="userId" property="userId" />
-		<result column="userName" property="userName" />
-		<result column="relationId" property="relationId" />
-		<result column="type" property="type" />
-		<result column="replyUserId" property="replyUserId" />
-		<result column="replyUserName" property="replyUserName" />
-		<result column="parentId" property="parentId" />
-		<result column="content" property="content" />
-		<collection property="children" column="{parentId=id}" select="selectByParentId" ofType="com.harvey.Comment"/>
-	</resultMap>
-
-	<!-- 根据关联id获取评论信息 -->
-	<select id="findList" resultMap="commentResultMap">
-		SELECT
-		<include refid="commentColumns"/>
-		FROM
-			comment a
-		<include refid="commentJoins"/>
-		WHERE
-			a.relation_id = #{relationId}
-			AND a.type = #{type}
-			AND a.parent_id = '0'
-		ORDER BY
-			a.create_date DESC
-	</select>
-
-	<!-- 根据id获取子评论内容 -->
-	<select id="selectByParentId" resultType="com.harvey.entity.Comment">
-		SELECT
-		<include refid="commentColumns"/>
-		FROM
-		comment a
-		<include refid="commentJoins"/>
-		WHERE
-		a.parent_id = #{parentId}
-		ORDER BY
-		a.create_date DESC
-	</select>
-<!--评论模块-->
-<template>
-  <el-drawer
-    title="评论"
-    :visible.sync="drawer"
-    direction="rtl"
-    :before-close="handleClose"
-    :modal="false"
-    :withHeader="true"
-    @open="getCommentList"
-    @close="close"
-    size="320px"
-  >
-    <div class="container">
-      <div class="write-reply" @click="showCommentInputMajor()">
-        <div style="margin-top: 10px;">
-          <el-input
-            class="gray-bg-input"
-            v-model="majorComment"
-            type="textarea"
-            :rows="3"
-            autofocus
-            placeholder="写下你的评论"
-          >
-          </el-input>
-          <div style="text-align: right;margin-top: 10px;">
-            <el-button @click="reset" size="small" round>重置</el-button>
-            <el-button
-              type="primary"
-              round
-              @click="commitMajorComment"
-              size="small"
-              >确定</el-button
-            >
-          </div>
-        </div>
-      </div>
-      <div class="comment" v-for="item in commentList" :key="item.id">
-        <div class="info">
-          <img
-            class="avatar"
-            :src="fileUrl + item.photo"
-            width="36"
-            height="36"
-          />
-          <div class="right">
-            <div class="name">{{ item.userName }}</div>
-            <div class="date">{{ formatDate(item.createDate) }}</div>
-          </div>
-        </div>
-        <div class="content">{{ item.content }}</div>
-        <div class="control">
-          <!-- <span
-          class="like"
-          :class="{ active: item.isLike }"
-          @click="likeClick(item)"
-        >
-          <i class="iconfont icon-like"></i>
-          <span class="like-num">{{
-            item.likeNum > 0 ? item.likeNum + "人赞" : "赞"
-          }}</span>
-        </span> -->
-          <span
-            class="comment-reply"
-            @click="showCommentInput(item, item, 'major')"
-          >
-            <i class="iconfont icon-iconcomment"></i>
-            <span>回复</span>
-          </span>
-        </div>
-        <div class="reply">
-          <div class="item" v-for="reply in item.children" :key="reply.id">
-            <div class="reply-content">
-              <span class="from-name">{{ reply.userName }}</span
-              ><span>: </span>
-              <span class="to-name">@{{ reply.replyUserName }}</span>
-              <span>{{ reply.content }}</span>
-            </div>
-            <div class="reply-bottom">
-              <span>{{ formatDate(reply.createDate) }}</span>
-              <span
-                class="reply-text"
-                @click="showCommentInput(item, reply, 'child')"
-              >
-                <i class="iconfont icon-iconcomment"></i>
-                <span>回复</span>
-              </span>
-            </div>
-          </div>
-          <transition name="fade">
-            <div class="input-wrapper" v-if="showItemId === item.id">
-              <el-tag
-                type="info"
-                effect="dark"
-                v-if="inputLabel != undefined && inputLabel"
-                >{{ inputLabel }}</el-tag
-              >
-              <el-input
-                class="gray-bg-input"
-                v-model="inputComment"
-                type="textarea"
-                :rows="3"
-                autofocus
-                placeholder="写下你的评论"
-              >
-              </el-input>
-              <div class="btn-control">
-                <el-button @click="cancel" size="small" round>取消</el-button>
-                <el-button
-                  type="primary"
-                  round
-                  @click="commitComment"
-                  size="small"
-                  >确定</el-button
-                >
-              </div>
-            </div>
-          </transition>
-        </div>
-      </div>
-    </div>
-  </el-drawer>
-</template>
-
-<script>
-import * as commentApi from "@/api/comment-api";
-import { DateUtil } from "@/utils/DateUtils";
-import { UserUtil } from "@/utils/UserUtils";
-import "@/assets/css/iconfont/iconfont.css";
-
-export default {
-  props: {
-    drawer: {
-      type: Boolean,
-      required: true,
-      default: false
-    },
-    relationId: {
-      type: String,
-      required: true,
-      default: ""
-    },
-    commentType: {
-      type: String,
-      required: true,
-      default: ""
+CREATE TABLE `messages` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `subject` varchar(255) NOT NULL,
+  `content` text NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+<!DOCTYPE html>
+<html>
+<head>
+    <title>留言板</title>
+</head>
+<body>
+    <h1>留言板</h1>
+    <a href="add.php">新增留言</a>
+    <table>
+        <tr>
+            <th>姓名</th>
+            <th>邮箱</th>
+            <th>主题</th>
+            <th>内容</th>
+            <th>创建时间</th>
+            <th>操作</th>
+        </tr>
+        <?php
+        // 使用PHP动态生成留言列表
+        $db = new mysqli('localhost', 'username', 'password', 'guestbook');
+        if ($db->connect_errno) {
+            die('连接数据库失败：' . $db->connect_error);
+        }
+        $sql = "SELECT * FROM messages ORDER BY created_at DESC";
+        $result = $db->query($sql);
+        while ($row = $result->fetch_assoc()) {
+            echo "<tr>";
+            echo "<td>" . $row['name'] . "</td>";
+            echo "<td>" . $row['email'] . "</td>";
+            echo "<td>" . $row['subject'] . "</td>";
+            echo "<td>" . $row['content'] . "</td>";
+            echo "<td>" . $row['created_at'] . "</td>";
+            echo "<td><a href='edit.php?id=" . $row['id'] . "'>编辑</a> | <a href='delete.php?id=" . $row['id'] . "'>删除</a></td>";
+            echo "</tr>";
+        }
+        $db->close();
+        ?>
+    </table>
+</body>
+</html>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>添加留言</title>
+</head>
+<body>
+    <h1>添加留言</h1>
+    <form action="add.php" method="post">
+        <label for="name">姓名：</label>
+        <input type="text" id="name" name="name" required><br>
+        <label for="email">邮箱：</label>
+        <input type="email" id="email" name="email" required><br>
+        <label for="subject">主题：</label>
+        <input type="text" id="subject" name="subject" required><br>
+        <label for="content">内容：</label><br>
+        <textarea id="content" name="content" rows="5" required></textarea><br>
+        <input type="submit" value="提交">
+    </form>
+</body>
+</html>
+<?php
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $db = new mysqli('localhost', 'username', 'password', 'guestbook');
+    if ($db->connect_errno) {
+        die('连接数据库失败：' . $db->connect_error);
     }
-  },
-  data() {
-    return {
-      fileUrl: process.env.VUE_APP_FDFST_FILE_URL,
-      commentList: [],
-      inputComment: "",
-      showItemId: "",
-      replyUserId: "",
-      parentId: "",
-      userInfo: UserUtil.getUserByStorage(),
-      inputLabel: "",
-      majorComment: ""
-    };
-  },
-  methods: {
-    formatDate(date) {
-      return DateUtil.formatDate(date, "yyyy-MM-dd hh:mm");
-    },
-    handleClose(done) {
-      done();
-    },
-    /**
-     * 点赞
-     */
-    /* likeClick(item) {
-      if (item.isLike === null) {
-        item.likeNum++;
-      } else {
-        if (item.isLike) {
-          item.likeNum--;
+    $name = $_POST['name'];
+    $email = $_POST['email'];
+    $subject = $_POST['subject'];
+    $content = $_POST['content'];
+
+    $stmt = $db->prepare("INSERT INTO messages (name, email, subject, content) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("ssss", $name, $email, $subject, $content);
+    if ($stmt->execute()) {
+        header('Location: index.html');
+    } else {
+        echo '添加留言失败：' . $stmt->error;
+    }
+    $stmt->close();
+    $db->close();
+}
+?>
+<?php
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
+    $id = $_GET['id'];
+    $db = new mysqli('localhost', 'username', 'password', 'guestbook');
+    if ($db->connect_errno) {
+        die('连接数据库失败：' . $db->connect_error);
+    }
+    $stmt = $db->prepare("SELECT * FROM messages WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        $name = $row['name'];
+        $email = $row['email'];
+        $subject = $row['subject'];
+        $content = $row['content'];
+    } else {
+        die('留言不存在');
+    }
+    $stmt->close();
+    $db->close();
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['id']) && isset($_POST['name']) && isset($_POST['email']) && isset($_POST['subject']) && isset($_POST['content'])) {
+        $id = $_POST['id'];
+        $name = $_POST['name'];
+        $email = $_POST['email'];
+        $subject = $_POST['subject'];
+        $content = $_POST['content'];
+
+        $db = new mysqli('localhost', 'username', 'password', 'guestbook');
+        if ($db->connect_errno) {
+            die('连接数据库失败：' . $db->connect_error);
+        }
+        $stmt = $db->prepare("UPDATE messages SET name = ?, email = ?, subject = ?, content = ? WHERE id = ?");
+        $stmt->bind_param("ssssi", $name, $email, $subject, $content, $id);
+        if ($stmt->execute()) {
+            header('Location: index.html');
         } else {
-          item.likeNum++;
+            echo '编辑留言失败：' . $stmt->error;
         }
-        item.isLike = !item.isLike;
-      }
-    }, */
-    // 获取评论内容
-    getCommentList() {
-      commentApi.findList(this.relationId, this.commentType).then(res => {
-        this.commentList = res.data;
-      });
-    },
-    /**
-     * 点击取消按钮
-     */
-    cancel() {
-      this.showItemId = "";
-    },
-
-    /**
-     * 提交评论
-     */
-    commitComment() {
-      // 封装参数
-      let param = {
-        userId: this.userInfo.userId,
-        relationId: this.relationId,
-        type: this.commentType,
-        replyUserId: this.replyUserId,
-        parentId: this.parentId,
-        content: this.inputComment
-      };
-      commentApi.saveComment(param).then(res => {
-        if (res.success) {
-          this.$message({
-            message: "评论成功",
-            type: "success"
-          });
-          this.getCommentList();
-          this.inputComment = "";
-        } else {
-          this.$message.error("评论失败");
-        }
-      });
-    },
-
-    /**
-     * 提交评论
-     */
-    commitMajorComment() {
-      // 封装参数
-      let param = {
-        userId: this.userInfo.userId,
-        relationId: this.relationId,
-        type: this.commentType,
-        replyUserId: this.replyUserId,
-        parentId: this.parentId,
-        content: this.majorComment
-      };
-      commentApi.saveComment(param).then(res => {
-        if (res.success) {
-          this.$message({
-            message: "评论成功",
-            type: "success"
-          });
-          this.getCommentList();
-          this.majorComment = "";
-        } else {
-          this.$message.error("评论失败");
-        }
-      });
-    },
-
-    /**
-     * 点击评论按钮显示输入框
-     * item: 当前大评论
-     * reply: 当前回复的评论
-     */
-    showCommentInput(item, reply, type) {
-      if (reply) {
-        this.inputLabel = "@" + reply.userName + " ";
-        if (type === "major") {
-          this.parentId = reply.id;
-        }
-        if (type === "child") {
-          this.parentId = reply.parentId;
-        }
-        this.replyUserId = reply.userId;
-        debugger;
-      } else {
-        this.inputLabel = "";
-        this.parentId = "0";
-        this.replyUserId = "";
-      }
-      this.inputComment = "";
-      this.showItemId = item.id;
-    },
-    showCommentInputMajor() {
-      this.inputLabel = "";
-      this.parentId = "0";
-      this.replyUserId = "";
-    },
-    reset() {
-      this.inputComment = "";
-      this.majorComment = "";
-    },
-    close() {
-      this.$emit("commentClose", "0");
+        $stmt->close();
+        $db->close();
     }
-  }
-};
-</script>
-
-<style scoped lang="less">
-/deep/.el-drawer__body {
-  overflow: auto;
 }
-/deep/.el-drawer__header span:focus {
-  outline: 0 !important;
-}
-.container {
-  padding: 0 10px;
-  box-sizing: border-box;
-  .comment {
-    display: flex;
-    flex-direction: column;
-    padding: 10px;
-    border-bottom: 1px solid #f2f6fc;
-    .info {
-      display: flex;
-      align-items: center;
-      .avatar {
-        border-radius: 50%;
-      }
-      .right {
-        display: flex;
-        flex-direction: column;
-        margin-left: 10px;
-        .name {
-          font-size: 16px;
-          color: #303133;
-          margin-bottom: 5px;
-          font-weight: 500;
-        }
-        .date {
-          font-size: 12px;
-          color: #909399;
-        }
-      }
-    }
-    .content {
-      font-size: 16px;
-      color: #303133;
-      line-height: 20px;
-      padding: 10px 0;
-    }
-    .control {
-      display: flex;
-      align-items: center;
-      font-size: 14px;
-      color: #909399;
-      .like {
-        display: flex;
-        align-items: center;
-        margin-right: 20px;
-        cursor: pointer;
-        &.active,
-        &:hover {
-          color: #409eff;
-        }
-        .iconfont {
-          font-size: 14px;
-          margin-right: 5px;
-        }
-      }
-      .comment-reply {
-        display: flex;
-        align-items: center;
-        cursor: pointer;
-        &:hover {
-          color: #333;
-        }
-        .iconfont {
-          font-size: 16px;
-          margin-right: 5px;
-          margin-top: 4px;
-        }
-      }
-    }
-    .reply {
-      margin: 10px 0;
-      border-left: 2px solid #dcdfe6;
-      .item {
-        margin: 0 10px;
-        padding: 10px 0;
-        border-bottom: 1px dashed #ebeef5;
-        .reply-content {
-          display: flex;
-          align-items: center;
-          font-size: 14px;
-          color: #303133;
-          .from-name {
-            color: #409eff;
-          }
-          .to-name {
-            color: #409eff;
-            margin-left: 5px;
-            margin-right: 5px;
-          }
-        }
-        .reply-bottom {
-          display: flex;
-          align-items: center;
-          margin-top: 6px;
-          font-size: 12px;
-          color: #909399;
-          .reply-text {
-            display: flex;
-            align-items: center;
-            margin-left: 10px;
-            cursor: pointer;
-            &:hover {
-              color: #333;
-            }
-            .icon-iconcomment {
-              margin-right: 5px;
-              margin-top: 4px;
-              font-size: 13px;
-            }
-          }
-        }
-      }
-      .write-reply {
-        display: flex;
-        align-items: center;
-        font-size: 14px;
-        color: #909399;
-        padding: 10px;
-        cursor: pointer;
-        &:hover {
-          color: #303133;
-        }
-        .el-icon-edit {
-          margin-right: 5px;
-        }
-      }
-      .fade-enter-active,
-      fade-leave-active {
-        transition: opacity 0.5s;
-      }
-      .fade-enter,
-      .fade-leave-to {
-        opacity: 0;
-      }
-      .input-wrapper {
-        padding: 10px;
-        .gray-bg-input,
-        .el-input__inner {
-          /*background-color: #67C23A;*/
-        }
-        .btn-control {
-          display: flex;
-          justify-content: flex-end;
-          align-items: center;
-          padding-top: 10px;
-          .cancel {
-            font-size: 16px;
-            color: #606266;
-            margin-right: 20px;
-            cursor: pointer;
-            &:hover {
-              color: #333;
-            }
-          }
-          .confirm {
-            font-size: 16px;
-          }
-        }
-      }
-    }
-  }
-}
-</style>
+?>
 
-<template>
-	<Comment
-      :relationId="kpiPerformance.id"
-      :commentType="'1'"
-      :drawer="isComment"
-      @commentClose="commentClick('0')"
-    ></Comment>
-</template>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>编辑留言</title>
+</head>
+<body>
+    <h1>编辑留言</h1>
+    <form action="edit.php" method="post">
+        <input type="hidden" name="id" value="<?php echo $id; ?>">
+        <label for="name">姓名：</label>
+        <input type="text" id="name" name="name" value="<?php echo $name; ?>" required><br>
+        <label for="email">邮箱：</label>
+        <input type="email" id="email" name="email" value="<?php echo $email; ?>" required><br>
+        <label for="subject">主题：</label>
+        <input type="text" id="subject" name="subject" value="<?php echo $subject; ?>" required><br>
+        <label for="content">内容：</label><br>
+        <textarea id="content" name="content" rows="5" required><?php echo $content; ?></textarea><br>
+        <input type="submit" value="保存">
+    </form>
+</body>
+</html>
+<?php
+$id = $_GET['id'];
 
-<script>
-import Comment from "@/components/Comment";
+$servername = "localhost";
+$username = "username";
+$password = "password";
+$dbname = "database";
 
-export default {
-	components: {
-	   Comment
-	}
+$conn = new mysqli($servername, $username, $password, $dbname);
+
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
 }
-</script>
+
+$sql = "DELETE FROM messages WHERE id=$id";
+
+if ($conn->query($sql) === TRUE) {
+    echo "Message deleted successfully";
+} else {
+    echo "Error deleting message: " . $conn->error;
+}
+
+$conn->close();
+?>
+<?php
+$servername = "localhost";
+$username = "username";
+$password = "password";
+$dbname = "database";
+
+$conn = new mysqli($servername, $username, $password, $dbname);
+
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+
+$sql = "SELECT * FROM messages ORDER BY created_at DESC";
+$result = $conn->query($sql);
+
+if ($result->num_rows > 0) {
+    while($row = $result->fetch_assoc()) {
+        echo "ID: " . $row["id"]. ", Name: " . $row["name"]. ", Email: " . $row["email"]. ", Subject: " . $row["subject"]. ", Content: " . $row["content"]. "<br>";
+    }
+} else {
+    echo "No messages found";
+}
+
+$conn->close();
+?>
+
